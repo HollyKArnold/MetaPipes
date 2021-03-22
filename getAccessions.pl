@@ -29,7 +29,7 @@ while(<ACC>){
 
     if($line eq ""){
 	print "Reached end of accessions file. \n";
-	return;
+	$paired = 3;
     }
 
     if($count == 1){
@@ -61,6 +61,9 @@ while(<ACC>){
 	my $cmd = "fastq-dump -O ${outDir} $line";
 	`$cmd`;
 
+    }elsif($paired == 3){
+	
+	print "Files have been downloaded to ${outDir}\n";
     }
     
 }
