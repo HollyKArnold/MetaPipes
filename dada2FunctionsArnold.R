@@ -1,0 +1,1137 @@
+# AUTHOR: ARNOLD
+# DAY: Feb 5, 2021
+# DATE: 20210205
+# PURPOSE: The purpose of this file is to provide a set of helper functions for dada2 processing
+# They will be stitched together to run a master script 
+
+
+# primerHits
+# INPUTS
+#   primer: a list from AllOrients of all possible orientations of your primer
+#   fn: a path to the file that you wish to read
+# OUTPUTS
+#   Prints to screen the number of primers it finds in each file
+# USE 
+#   Uses max.mismatch of 0.
+primerHits <- function(primer, fn) {
+    
+	#Count the number of reads that the primer sequence is found in
+	nhits <- vcountPattern(primer, sread(readFastq(fn)), fixed = F, max.mismatch = 0)
+	return(sum(nhits > 0))
+}
+
+# allOrients
+# PURPOSE: Create a vector of all possible oreintations of primer sequence
+# INPUTS:
+#   primer: a string of letters representing a primer
+# OUTPUTS
+#   a vector containing all possible orientations of the provided primer sequence
+allOrients <- function(primer) {
+    # Create all orientations of the input sequence
+    require(Biostrings)
+    dna <- DNAString(primer)  # The Biostrings works w/ DNAString objects rather than character vectors
+    orients <- c(Forward = dna, Complement = complement(dna), Reverse = reverse(dna), 
+        RevComp = reverseComplement(dna))
+    return(sapply(orients, toString))  # Convert back to character vector
+}
+
+# getN
+# INPUTS: a vector
+# OUTPUTS: returns a count of unique items in the vector
+getN <- function(x) sum(getUniques(x))
+
+# my.cat
+# INPUTS: Something to print to the screen
+# OUTPUTS: Prints out print to screen in a nice way
+my.cat <- function(x) {cat(paste0("\n### ", x, "\n"), sep = "\n")}
+
+# my.bash 
+# INPUTS: Something to print into a bash file
+# OUTPUTS: prints out something for bash file. You still need to start sink before this.
+my.bash = function(x){
+	cat(paste0(x, "\n"))
+}
+
+# dada2.envPrep
+# PURPOSE: Loads files and paths that should be the same from dada2 run to run. 
+# INPUTS: NONE
+# OUPUTS: 
+#  run.env: returns the run environment
+#  if it doesn't exist, makes a dada 2 output directory
+dada2.envPrep = function(){
+	
+	# Load Libraries
+	load.libs()
+
+	# Project name
+	proj.name <- tail(strsplit(getwd(), "/")[[1]], 1)
+
+	# Dada2 Version Number	
+	dada.pkg.ver <- paste0("dada2_", packageVersion("dada2"))
+	
+	# Date of run
+	process.date <- Sys.Date()
+	
+	# Process ID
+	process.id <- paste(dada.pkg.ver, process.date, sep = "_")
+	
+	# Output for dada2 folder
+	output <- paste0(c(proj.name, "_", process.id, "_output"), sep = "", collapse = "")
+
+	#Create a dada2 directory
+	if (!dir.exists(output)) {
+ 		dir.create(output)
+	}
+	
+	# Create a new dada2 environment to do these runs in
+	run.env <- new.env()
+
+	# Set run environment variables
+	run.env$output = output
+	run.env$process.id = process.id
+	run.env$process.date = process.date
+	run.env$proj.name = proj.name
+	run.env$dada.pkg.ver = dada.pkg.ver
+
+	# Get session info
+	run.env$sessionInfo = sessionInfo()
+	
+	# Write session info
+	my.cat("Writing out session info to sessionInfo.txt")
+	writeLines(capture.output(sessionInfo()), paste0(output, "/sessionInfo.txt"))	
+
+	return(run.env)
+
+}
+
+# load.libs
+# PURPOSE: Load libraries necessary for the run
+# INPUTS: None
+# OUTPUTS: String with success of library load
+load.libs = function(){
+	 # List of required packages
+	 packages = c("dada2", "ShortRead", "Biostrings", "stringr", "utils", "ggplot2", "reshape2", "phyloseq")
+	  
+	 package.check(packages)
+
+	  
+}
+
+# package.check()
+# PURPOSE: checks for appropriate packages installed for the run.
+# INPUTS: 
+#   packages: A list of packages to load for the run
+# OUTPUTS: Attempts to install packages if not present.
+package.check =  function(packages){
+	      
+	      # Make a variable to decide if all packages were loaded correctly
+	      success = 1
+	      
+	      packageListString = paste0(packages, collapse = " ")
+	      lapply(packages, FUN = function(x) {if (!require(x, character.only = TRUE)) {
+	      		       	     		success = 0
+	      		       	     		my.cat("The following required packages did not load properly:")
+						my.cat(x)
+						my.cat("Attempting to install them now.")
+                                                install.packages(x, dependencies = TRUE)
+                                                library(x, character.only = TRUE)
+                                                }else{
+							#my.cat(paste0(c("Loading: ", x), collapse = " ", sep = " "))
+						}
+									                }
+                )
+		if(success == 1){
+			   my.cat(paste0(c("Successfully loaded all packages in required package list:", packageListString), collapse = " "))
+		}else{
+			my.cat("Warning: all of the required packages were not loaded.")
+		}
+
+}
+
+# dada2.userDefinedParams
+# INPUTS:
+#   file: A link to the user defined parameter file with the following attributes
+#   	  col1: the user parameters that need to be defined
+#	  col2: the user provided variables that must be filled out.
+#	  Tab separated file
+#   env: An environment object from dada2.envPrep() which contains the output directory
+# OUTPUTS:
+#	env: Returns 
+dada2.userDefinedParams = function(file, env){
+
+        # Read in options file
+	my.cat(paste0("Setting user defined params at", file))
+	opts = read.table(file, sep = "\t", header = TRUE)
+
+	# Set silva file
+	env$silvaTax = as.vector(opts[which(opts[,1] == "silvaTrainingSet"), 2])
+	my.cat(paste0("Setting silva training set to: ", env$silvaTax))
+
+	# Set silva species file
+	env$silvaSpecies = as.vector(opts[which(opts[,1] == "silvaSpeciesSet"), 2])
+	my.cat(paste0("Setting silva species training set to: ", env$silvaSpecies))
+
+	# Set cut adapt file path
+	env$cutAdapt = as.vector(opts[which(opts[,1] == "cutadapt"), 2])
+	my.cat(paste0("Setting cut adapt file path to: ", env$cutAdapt))
+
+	# Setting primer sequences
+	env$FWD = as.vector(opts[which(opts[,1] == "FWD"), 2])
+	env$REV = as.vector(opts[which(opts[,1] == "REV"), 2])
+	my.cat(paste0("Setting forward primer to: ", env$FWD))
+	my.cat(paste0("Setting reverse primer to: ", env$REV))
+	
+	# Return environment
+	return(env)
+}
+
+
+# dada2.checkMetadataMatchFastQ
+# PURPOSE: Read in metadata file, see if it matches the fastq files
+# INPUTS:
+#   fastq.path: The path to fastq files.
+#   metadata: The metadata file.
+# OUTPUTS:
+dada2.checkMetadataMatchFastQ = function(fastq.path, metadataFile, env){
+	print(head(list.files(fastq.path), 20))
+  	proceed <- readline(prompt = "Above are the first 20 (or fewer) files in the provided path, do you want to proceed? [y/n]: ")
+  	while (!(proceed %in% c("y", "n"))) {
+    		proceed <- readline(prompt="Please answer y or n: ")
+  	}
+  	if (proceed == "n") {
+    		my.cat("Terminated")
+  	} else {
+	  names = basename(list.files(fastq.path))
+	}
+
+	metadata = read.table(metadataFile)
+	print(head(metadata))
+	proceed = readline(prompt = "Above is the head of the metadatafile in the provided file, do you want to proceed? [y/n]: ")
+	
+        while (!(proceed %in% c("y", "n"))) {
+                proceed <- readline(prompt="Please answer y or n: ")
+	}
+	if(proceed == "n"){
+		   my.cat("Terminated")
+	}else{
+		metadatanames = rownames(metadata)
+
+	}
+
+
+	my.cat("Checking if metadatanames and fastqfiles are identical...")
+	fastqNameBase = unique(gsub(pattern=".R[12].fastq.gz", replacement="", x = names))
+	if("filtN" %in% fastqNameBase){
+	    	idx = which(fastqNameBase == "filtN")
+		fastqNameBase = fastqNameBase[-idx]
+	}
+	if("cut" %in% fastqNameBase){
+                idx = which(fastqNameBase == "cut")
+                fastqNameBase = fastqNameBase[-idx]
+        }
+
+	if(sum(fastqNameBase %in% metadatanames) != length(fastqNameBase)){
+		my.cat("Some fastQ files were not found in the metadata file.")
+		my.cat("Please delete these fastQ files and rerun.")
+		print(fastqNameBase[!fastqNameBase %in% metadatanames])
+		toRemove = fastqNameBase[!fastqNameBase %in% metadatanames]
+		sink(paste0(env$output, "/fastQFilesToRemove.sh"))
+		my.bash("#!/bin/bash")
+		for (i in 1:length(toRemove)){
+		    my.bash(paste0(c("rm ", toRemove[i], ".R1.fastq.gz"), sep = "", collapse = ""))
+		    my.bash(paste0(c("rm ", toRemove[i], ".R2.fastq.gz"), sep = "", collapse = ""))
+		}
+		sink()
+		my.cat("You will have to rerun your R script, but I printed a bash file for you at:")
+		my.cat(paste0(env$output, "/fastQFilesToRemove.sh"))
+		my.cat("Use with caution!")
+		stop("Please make sure metadata rownames and fastq filenames match before proceeding...")
+	}else{
+		my.cat("Perfect! The metadata file rownames and the fastq files match! Proceeding...")
+	}
+	
+
+	# Assign values
+	env$fastqNames = names
+	env$metadataNames = metadatanames
+	env$fastq.path = fastq.path
+	env$metadataFile = metadataFile
+	env$metadata = metadata
+
+	# Return environemnt file
+	return(env)
+}
+
+# dada2.preFilter
+# INPUTS: 
+#   env = an enviornment obtained from dada2.checkMetadataMatchFastQ
+# OUTPUT:
+#   prefilters sequences before cutting into fastq directory under filtN/ with the number of cores for processors
+dada2.preFilter = function(env, cores){
+	
+	# Get forward and reverse files
+	fnFs = sort(list.files(env$fastq.path, pattern = ".R1.fastq.gz", full.names = T))
+	fnRs = sort(list.files(env$fastq.path, pattern = ".R2.fastq.gz", full.names = T))
+
+	# Get all orientations of the primer
+	FWD.orients = allOrients(env$FWD)
+	REV.orients = allOrients(env$REV)
+
+	# Create file names for all the filtered seqs	
+	my.cat("Pre-filtering sequences before cutting primers:")
+	fnFs.filtN = file.path(env$fastq.path, "filtN", basename(fnFs))
+	fnRs.filtN = file.path(env$fastq.path, "filtN", basename(fnRs))
+
+	# Now filter the sequences
+	out.fn.filtN = filterAndTrim(fnFs, fnFs.filtN, fnRs, fnRs.filtN, maxN = 0, multithread = cores, compress = T)
+
+	# Add our steps for this function to the environment varaible
+	env$fnFs = fnFs
+	env$fnRs = fnRs
+	env$FWD.orients = FWD.orients
+	env$REV.orients = REV.orients
+	env$fnFs.filtN = fnFs.filtN
+	env$fnRs.filtN = fnRs.filtN
+	env$out.fn.filtN = out.fn.filtN
+
+	return(env)
+}
+
+# dada2.checkForPrimersInitial
+# INPUTS
+#   env: an environment obtained from dada2.preFilter
+# OUTPUTS
+#   Prints out a list of primers found pre cut
+dada2.checkForPrimersInitial = function(env){
+	
+	# Number of files	
+	N = length(env$fnFs.filtN)
+
+	# Make a message for user to see how many primers to look for before cutting
+	message = paste0(c("Please enter number of files to initially scan for primer presence. If you would like to print all files then enter in ", N, "\n"), sep = "", collapse = "")	
+	proceed = readinteger(max = N, message = message)
+	if(proceed == 0){
+	}else{
+	
+		# Print out initial primer finds
+		my.cat(paste0(c("Printing out initial primers found for first ", proceed, " files:"), collapse = "", sep = ""))
+		sink(paste0(env$output, "/initialPrimers.txt"))
+		for(i in 1:proceed){ 
+	      	      print(i)
+	      	      if (file.exists(env$fnFs.filtN[[i]])){print(rbind(
+	      	      	 FWD.ForwardReads = sapply(env$FWD.orients, primerHits, fn = env$fnFs.filtN[[i]]), 
+		 	 FWD.ReverseReads = sapply(env$FWD.orients, primerHits, fn = env$fnRs.filtN[[i]]), 
+		 	 REV.ForwardReads = sapply(env$REV.orients, primerHits, fn = env$fnFs.filtN[[i]]), 
+		 	 REV.ReverseReads = sapply(env$REV.orients, primerHits, fn = env$fnRs.filtN[[i]])))
+	      	      } 
+		}
+		sink()
+	}
+
+}
+
+# dada2.cut
+# INPUTS
+#  env: an environment obtained from dada2.preFilter
+#  cores: the number of cores for cut adapt
+#  errors: the number of errors allowed for cut adapt. Default is 0.1
+# OUTPUTS
+#  a set of cut sequences and a file with theoutput from cutadapt
+#  modifies environment by adding paths for cut variables
+dada2.cut = function(env, cores, errors = 0.1){
+	# Make a path for cut files
+	env$path.cut = file.path(env$fastq.path, "cut")
+
+	# Make the directory for cut files
+	if(!dir.exists(env$path.cut)) dir.create(env$path.cut)
+	env$fnFs.cut = file.path(env$path.cut, basename(env$fnFs))
+	env$fnRs.cut = file.path(env$path.cut, basename(env$fnRs))
+
+	# Make primer reverse compliment
+	env$FWD.RC = dada2:::rc(env$FWD)
+	env$REV.RC = dada2:::rc(env$REV)
+	
+	# Trim FWD and reverse compliment off of foward reads
+	env$R1.flags = paste("-g", env$FWD, "-a", env$REV.RC)
+
+	# Trim reverse and foward reverse compliment off of reverse reads
+	env$R2.flags = paste("-G", env$REV, "-A", env$FWD.RC)
+
+	# Now, run cut adapt!
+	# -n is required to remove FWD and REV from reads
+	# -m required to not cut sequence to length 0 and kill the quality plot later
+	# fnFs.cut and fnFs.rev are output files
+	# fnFs.filtN and fnRs.filtN are the input files.
+	my.cat("Running cut adapt:")
+	sink(paste0(env$output, "/cutAdaptOutput.txt"))
+	
+	
+	for(i in seq_along(env$fnFs)){
+	      if(file.exists(env$fnFs[i])){
+		x = system2(env$cutAdapt,  args = c(env$R1.flags, env$R2.flags, 
+				  "-n", 2, "-m", 1, "-j", cores, "-e", errors, "-o", env$fnFs.cut[i], "-p", env$fnRs.cut[i], 
+				  env$fnFs.filtN[i], env$fnRs.filtN[i]), stdout = TRUE, wait = TRUE)
+	      	my.cat(x)
+	      }
+	}
+	sink()
+
+	# Name cut forward and reverse files
+	env$cutFs = sort(list.files(env$path.cut, pattern = ".R1.fastq.gz", full.names = T))
+	env$cutRs = sort(list.files(env$path.cut, pattern = ".R2.fastq.gz", full.names = T))
+	get.sample.names = function(fname) strsplit(basename(fname), ".R1.fastq.gz")[[1]][1]
+	env$sample.names = unname(sapply(env$cutFs, get.sample.names))
+
+
+	# Return environment
+	return(env)
+}
+
+# readinteger
+# INPUTS:
+#  max: the maximum integer that is allowed for input
+# OUTPUT: Function to make sure an integer is read that is below max
+readinteger <- function(max, message)
+{ 
+
+  n <- readline(prompt=message)
+
+
+  if(!grepl("^[0-9]+$",n))
+  {
+    return(readinteger(max = max, message = message))
+  }else if(as.integer(n) > max){
+    return(readinteger(max = max, message = message))
+  }
+  
+  return(as.integer(n))
+}
+
+# dada2.checkForPrimersPostCut
+# PURPOSE: TO check for primers in the files post cut
+# INPUTS: an environment returned from dada2.cut
+# OUTPUTS: 
+#   makes no changes to environment variable
+#   outputs a file with primers found in the cut sequences. 
+dada2.checkForPrimersPostCut = function(env){
+        
+	# Get the total number of files to check for primer post cut
+	N = length(env$fnFs.filtN)
+
+	# Print message
+	message = paste0(c("Please enter number of files to scan for primer presence post cut. If you would like to print all files then enter in ", N, "\n"), sep = "", collapse = "")
+
+	# Get the number of files to print
+	proceed = readinteger(max = N, message = message)
+
+	# User doesn't want to check any post files
+        if(proceed == 0){
+        }else{
+
+		# Print out primer finds post cut
+                my.cat(paste0(c("Printing out primers found in cut sequences for first ", proceed, " files:"), collapse = "", sep = ""))
+                sink(paste0(env$output, "/cutPrimers.txt"))
+		for(i in 1:proceed){
+                      print(i)
+                      if (file.exists(env$fnFs.cut[i])){print(rbind(
+                         FWD.ForwardReads = sapply(env$FWD.orients, primerHits, fn = env$fnFs.cut[i]),
+                         FWD.ReverseReads = sapply(env$FWD.orients, primerHits, fn = env$fnRs.cut[i]),
+                         REV.ForwardReads = sapply(env$REV.orients, primerHits, fn =env$ fnFs.cut[i]),
+                         REV.ReverseReads = sapply(env$REV.orients, primerHits, fn = env$fnRs.cut[i])))
+                      }
+                }
+		sink()
+	}
+
+}
+
+# dada2.printCutQualityPlots
+# INPUTS:
+#   env: An enviornment function returned from dada2.cut
+#   thresh: A number to not print a quality plot (i.e. less than 1000 seqs will get thrown out)
+#   space: The space between quality plot figures
+#   figsize: size of quality plot figures for latex
+#   nsubfigure: The number of subfigures per latex plot 
+# OUTPUTS:
+#   A set of quality plots in "qualityPlotsCut"
+dada2.printCutQualityPlots = function(env, thresh = 1000, space = 0.5, figsize = 50, nsubfigure = 8){
+
+     # Number of files
+     N = length(env$sample.names)
+
+     # Make a message for user to see how many primers to look for before cutting
+     message = paste0(c("Please enter the number of quality plots to print out. If you want to print them all, then enter: ", N, "\n"), sep = "", collapse = "")
+
+     proceed = readinteger(max = N, message = message)
+     if(proceed == 0){
+        my.cat("You have chosen to not print any quality plots.")
+	return(1)
+     }else{
+	
+	
+	# Make a path for quality plots
+        env$path.qualCut = file.path(env$output, "qualityPlotsCut")
+
+        # Make the directory for cut files
+        if(!dir.exists(env$path.qualCut)) dir.create(env$path.qualCut)
+
+	# Make a progress bar for forward plots
+	my.cat("Printing forward quality plot scores...")
+	pb = txtProgressBar(min = 0, max = proceed)
+	
+	# Make the forward quality plots
+	for(i in 1:proceed){
+	      setTxtProgressBar(pb, i)
+      	      if(file.exists(env$cutFs[i]) & env$out.fn.filtN[i,"reads.out"] > thresh){
+
+	           # Name the plot
+	           plotName = paste0(c("/", env$sample.names[i], "ForwardCutQualityScorePlot.pdf"), sep = "", collapse = "")
+ 		   plotName = gsub(x = plotName, pattern = "_", replace = "")
+		   
+		   # Print the plot
+		   pdf(file = paste0(env$path.qualCut, plotName))
+  	     	   print(plotQualityProfile(env$cutFs[i]))
+	      	   dev.off()
+	      }
+  	}
+	close(pb)
+
+	# Make a progress bar for reverse plots
+	my.cat("Printing reverse quality plot scores...")
+	pb = txtProgressBar(min = 0, max = proceed)
+	
+	# Make the reverse quality plots
+	for(i in 1:proceed){
+	      setTxtProgressBar(pb, i)
+              if(file.exists(env$cutRs[i]) & env$out.fn.filtN[i,"reads.out"] > thresh){
+
+	           # Name the plot
+                   plotName = paste0(c("/", env$sample.names[i], "ReverseCutQualityScorePlot.pdf"), sep = "", collapse = "")
+		   plotName = gsub(x = plotName, pattern = "_", replace = "")                   
+
+		   # Print the plot
+		   pdf(file = paste0(env$path.qualCut, plotName))
+                   print(plotQualityProfile(env$cutRs[i]))
+                   dev.off()
+              }
+        }
+	close(pb)
+
+	# Now make latex output file so that we can easily import these into latex
+	latexwritefile = paste0(c(env$path.qualCut, "/latexQualityCutPlotsSubfigures.txt"), sep = "", collapse = "") 
+	latexwritefileFigs = paste0(c(env$path.qualCut, "latexFigs.txt"), sep = "", collapse = "")
+
+	qualityScoreNames = gsub(x=list.files(env$path.qualCut, pattern = ".pdf", full.names =F), pattern = ".pdf", replacement = "")
+	writeLatexQualityPlotFiles(writefile = latexwritefile, append = F, space= space, figsize= figsize, filelist=qualityScoreNames, nsubfigure=nsubfigure)
+   }
+   return(env)
+
+}
+
+
+
+# dada2.printFilteredQualityPlots
+# INPUTS:
+#   env: An environment function returned from dada2.cut
+#   thresh: A number below which to not print a quality for
+# OUTPUTS:
+#   A set of quality plots in "qualityPlotsFiltN"
+dada2.printFiltNQualityPlots = function(env, thresh = 1000, space = 0.5, figsize = 50, nsubfigure = 8){
+
+			     
+     # Number of files
+     N = length(env$sample.names)
+
+     # Make a message for user to see how many primers to look for before cutting
+     message = paste0(c("Please enter the number of quality plots to print out. If you want to print them all, then enter: ", N, "\n"), sep = "", collapse = "")
+
+     proceed = readinteger(max = N, message = message)
+     if(proceed == 0){
+        my.cat("You have chosen to not print any quality plots.")
+        return(1)
+     }else{
+
+
+       # Make a path for quality plots
+       env$path.qualFiltN = file.path(env$output, "qualityPlotsFiltN")
+
+       # Make the directory for quality plots of filtered files
+       if(!dir.exists(env$path.qualFiltN)) dir.create(env$path.qualFiltN)
+
+       # Make a progress bar for forward plots
+       my.cat("Printing forward quality plot scores...")
+       pb = txtProgressBar(min = 0, max = proceed)
+
+       # Make the forward quality plots
+       for(i in 1:proceed){
+              setTxtProgressBar(pb, i)
+              if(file.exists(env$fnFs.filtN[i]) & env$out.fn.filtN[i,"reads.out"] > thresh){
+
+                   # Name the plot
+                   plotName = paste0(c("/", env$sample.names[i], "ForwardFilteredQualityScorePlot.pdf"), sep = "", collapse = "")
+		   plotName = gsub(x = plotName, pattern = "_", replace = "")
+
+                   # Print the plot
+                   pdf(file = paste0(env$path.qualFiltN, plotName))
+                   print(plotQualityProfile(env$fnFs.filtN[i]))
+                   dev.off()
+              }
+        }
+        close(pb)
+
+        # Make a progress bar for reverse plots
+        my.cat("Printing reverse filtered quality plot scores...")
+        pb = txtProgressBar(min = 0, max = proceed)
+
+        # Make the reverse quality plots
+        for(i in 1:proceed){
+              setTxtProgressBar(pb, i)
+              if(file.exists(env$fnRs.filtN[i]) & env$out.fn.filtN[i,"reads.out"] > thresh){
+
+                   # Name the plot
+                   plotName = paste0(c("/", env$sample.names[i], "ReverseFilteredQualityScorePlot.pdf"), sep = "", collapse = "")
+		   plotName = gsub(x = plotName, pattern = "_", replace = "")		   
+
+                   # Print the plot
+                   pdf(file = paste0(env$path.qualFiltN, plotName))
+                   print(plotQualityProfile(env$fnRs.filtN[i]))
+                   dev.off()
+              }
+        }
+        close(pb)
+
+        # Now make latex output file so that we can easily import these into latex
+        latexwritefile = paste0(c(env$path.qualFiltN, "/latexQualityPlotsFilteredSubfigures.txt"), sep = "", collapse = "")
+        latexwritefileFigs = paste0(c(env$path.qualFiltN, "latexFigs.txt"), sep = "", collapse = "")
+
+        qualityScoreNames = gsub(x=list.files(env$path.qualFiltN, pattern = ".pdf", full.names =F), pattern = ".pdf", replacement = "")
+        writeLatexQualityPlotFiles(writefile = latexwritefile, append = F, space = space, figsize= figsize, filelist=qualityScoreNames, nsubfigure=nsubfigure)
+   }
+   return(env)
+}
+
+
+# FUNCTION: writeLatexQualityPlotFiles
+# PURPOSE:  Given a list of subfigure names outputs a latex documentation
+#           for each file to be added as a subfigure.
+# INPUTS:
+#           fileList - list of file names 
+#           space - space between figures
+#           figSize - figure Size
+#           writefile - the file to write to
+#           nSubfigure - the number of plots to output to a single subfigure
+# OUTPUTS:
+#           prints out the latex subfigures.
+
+writeLatexQualityPlotFiles = function(writefile, space, figsize, filelist, nsubfigure, append){
+  
+  sink(writefile, append = append)
+  
+  N = length(filelist)
+  cur = 1
+  curFig = 0
+  
+  while(cur <= N ){ # Make a new figure
+    curFig = curFig + 1
+    cat("\\begin{figure}[H]\n")
+    
+    while(cur <= nsubfigure*curFig & cur <= N){
+      
+      cat(paste0(c("\\begin{subfigure}[b]{", space, "\\textwidth}\n"), collapse = "", sep = ""))
+      cat(paste0(c("\\includegraphics[width=", figsize, "mm]{", filelist[cur], "}\n"), collapse = "", sep = ""))
+      cat(paste0(c("\\caption{", filelist[cur], "}\n"), collapse = "", sep = ""))
+      cat(paste0(c("\\label{fig:", filelist[cur], "}\n"), collapse = "", sep = ""))
+      cat("\\end{subfigure}\n")
+      
+      cur = cur + 1 #update current subfigure
+      
+    }
+    
+    cat("\\end{figure}\n\n")
+  }
+  
+  sink()
+}
+
+# FUNCTION: dada2.filterCutSeqs
+# INPUTS:
+#    cores: The number of cores to run on
+#    fwdTrimLength: The length to trim the forward reads
+#    revTrimLength: The length to trim the reverse reads to
+#    env: An environment output from dada2.printCutQualityPlots
+#    thresh: The number of reads required to further consider sampels (i.e. throw out reads under this thresh)
+# OUTPUTS
+#   filters cut seqneuces
+dada2.filterCutSeqs = function(env, fwdTrimLength, revTrimLength, cores, thresh){
+
+    # Print message
+    my.cat("Filtering cut sequences...")
+
+    # Create file paths to filtered cut sequences		   
+    env$filtFs = file.path(env$path.cut, "filtered", basename(env$cutFs))
+    env$filtRs = file.path(env$path.cut, "filtered", basename(env$cutRs))
+    
+    # Filter sequences
+    env$out.cut.filt = filterAndTrim(env$cutFs, env$filtFs, env$cutRs, env$filtRs, truncLen = c(fwdTrimLength, revTrimLength), maxN = 0, maxEE = c(1, 1), truncQ = 2, rm.phix = TRUE, compress = TRUE, multithread = cores)
+
+    # Return env
+    return(env)
+}
+
+# FUNCTION dada2.learnErrors
+# INPUTS: 
+#    env: an environment returned from dada2.filterCutSeqs
+#    cores: the number of cores to use for error learning
+# OUTPUTS
+#    learns errors for dada2 and plots graphs. 
+#    errF: Forward errors added to env
+#    errR: Reverse errors
+dada2.learnErrors = function(env, cores, thresh){
+
+    # Print message
+    my.cat("Learning errors...")
+
+    # Get the files that exist
+    env$exists = file.exists(env$filtFs) & as.vector(env$out.cut.filt[,"reads.out"] > thresh) & file.exists(env$filtRs)
+    
+    # Learn errors
+    env$errF = learnErrors(env$filtFs[env$exists], multithread = cores)
+    env$errR = learnErrors(env$filtRs[env$exists], multithread = cores)
+
+    #Plot Forward Errors
+    errF.plot = plotErrors(env$errF, nominalQ = TRUE)
+    ggsave(errF.plot, file = file.path(env$output, "errFplot.pdf"))
+
+    #Plot Reverse Errors
+    errR.plot <- plotErrors(env$errR, nominalQ = TRUE)
+    ggsave(errR.plot, file = file.path(env$output, "errRplot.pdf"))
+
+    
+    return(env)
+}  
+
+# FUNCTION dada2.dada2
+# PURPOSE: Run dada2
+# INPUTS:
+#    env: an env from dada2.learnErrors
+#    pool: should sequences be pooled
+#    cores: number of cores to use to run
+# OUTPUTS:
+#    dadaF: forward dada2 objects
+#    dadaR: reverse dada2 object
+dada2.dada2 = function(env, pool, cores){
+     
+     # Print
+     my.cat("Running dada2...")
+     
+     # Run dada2 
+     env$dadaFs = dada(env$filtFs[env$exists], err = env$errF, multithread = cores, pool = pool)
+     env$dadaRs = dada(env$filtRs[env$exists], err = env$errR, multithread = cores, pool = pool)
+     
+     # Return env
+     return(env)
+
+}
+
+# FUNCTION dada2.mergers
+# PURPOSE: To merge dadaF and dadaR objects
+# INPUTS: env from dada2.dada2
+# OUTPUTS:
+#   mergers: the merged pairs
+dada2.mergers = function(env){
+    
+    # Starting dada2.mergers
+    my.cat("Merging dada2 forward and reverse... ")
+
+    # Merge Pairs
+    env$mergers = mergePairs(env$dadaFs, env$filtFs[env$exists], env$dadaRs, env$filtRs[env$exists], verbose = TRUE)
+    
+    # Print mergers
+    my.cat(head(env$mergers[[1]]))
+
+    # Return
+    return(env)        	      
+}
+
+# FUNCTION: dada2.sequenceTable
+# PURPOSE: Make sequence table from merged dada2 objects
+# INPUTS:
+#    env from dada2.mergers
+# OUTPUTS:
+#    seqtab: a sequence table from the mergers object
+dada2.sequenceTable = function(env){
+     
+     # Make a sequence table
+     env$seqtab = makeSequenceTable(env$mergers)
+     
+     # Get the dimensions of the sequence table
+     my.cat("The original sequence table table dimensions:")
+     my.cat(dim(env$seqtab))
+     
+     # Get the range of sequence lengths
+     my.cat(table(nchar(getSequences(env$seqtab))))
+
+     # Return the sequence table
+     return(env)
+      
+}
+
+# FUNCTION: dada2.removeChimeras
+# INPUTS
+#     env: an env from dada2.sequenceTable
+# OUTPUTS
+#     seqtab.nochim: a sequence table witout chimeras
+dada2.removeChimeras = function(env, cores){
+
+     # Print out function heading
+     my.cat("Removing chimeras from the sequence table...")
+     
+     # Remove chimeras
+     env$seqtab.nochim = removeBimeraDenovo(env$seqtab, method = "consensus", multithread = cores, verbose = TRUE)
+     
+     # Print out the dimensions of the ASV table with removed chimeras
+     my.cat("The dimensions of the sequence table with chimeras removed")
+     my.cat(dim(env$seqtab.nochim))
+
+     # Print out the percent of reads retained when chimeras are removed
+     my.cat("The percentage of sequences retained after chimeras are removed")
+     my.cat(sum(env$seqtab.nochim)/sum(env$seqtab))
+
+     #Return environment
+     return(env)
+}
+
+# FUNCTION: dada2.makeASVTable
+# INPUTS:
+#    env: an env from dada2.removeChimeras
+#    fileTailPattern: A string that may be at the end of the rownames of the ASV file matching forward file names
+# OUTPUTS
+#    asv: makes an ASV table from the removed chimera table
+dada2.makeASVTable = function(env, fileTailPattern = ".R1.fastq.gz"){
+     
+     # Run dada2.makeASVTable
+     my.cat("Making ASV table...")
+
+     # Make ASV Table
+     env$asv = env$seqtab.nochim
+     
+     #Rename rownames
+     rownames(env$asv) = sub(x = rownames(env$asv), pattern = fileTailPattern, replace = "")
+
+     
+     #Return env
+     return(env)
+}
+
+# FUNCTION: dada2.makeCountTable
+# INPUTS:
+#     env: from dada2.makeASVTable
+# OUTPUTS:
+#     counts: a table of counts for each step in the filtering process
+dada2.makeCountTable = function(env, fileTailPatternForward = ".R1.fastq.gz", fileTailPatternReverse = ".R2.fastq.gz"){
+     
+     
+     # Count forward original reads
+     my.cat("Counting the reads in original files...")
+
+     # Count the number of sequences in the forward and reverse reads
+     env$count.fnFs = sapply(env$fnFs, getN)
+     env$count.fnRs = sapply(env$fnRs, getN)     
+
+     # Rename
+     names(env$count.fnFs) = sub(x = basename(path = names(env$count.fnFs)), pattern = fileTailPatternForward, replace = "")
+     names(env$count.fnRs) = sub(x = basename(path = names(env$count.fnRs)), pattern = fileTailPatternReverse, replace = "")
+
+     # Count the sequences filtered for N's
+     my.cat("Counting the reads filtered for Ns...")
+
+     # Count the number of filtered N sequences in the forward and reverse reads
+     env$count.fnFs.filtN = sapply(env$fnFs.filtN[file.exists(env$fnFs.filtN)], getN)
+     env$count.fnRs.filtN = sapply(env$fnRs.filtN[file.exists(env$fnRs.filtN)], getN)
+
+     # Rename the filtered N sequences
+     names(env$count.fnFs.filtN) = sub(x = basename(path = names(env$count.fnFs.filtN)), pattern = fileTailPatternForward, replace = "")
+     names(env$count.fnRs.filtN) = sub(x = basename(path = names(env$count.fnRs.filtN)), pattern = fileTailPatternReverse, replace = "")
+
+     # Message to count filtered reads
+     my.cat("Counting the numbers of filtered cut reads...")
+     
+     # Count the filtered cut sequences
+     env$count.filtFs = sapply(env$filtFs[file.exists(env$filtFs)], getN)
+     env$count.filtRs = sapply(env$filtRs[file.exists(env$filtRs)], getN)
+
+     # Rename the filtered cut sequences
+     names(env$count.filtFs) = sub(x = basename(path = names(env$count.filtFs)), pattern = fileTailPatternForward, replace = "")
+     names(env$count.filtRs) = sub(x = basename(path = names(env$count.filtRs)), pattern = fileTailPatternReverse, replace = "")
+
+     # Count dadaFs and dadaRs
+     my.cat("Counting the number of reads after dada2 algorithm...")
+     
+     # Count dada reads
+     env$count.dadaFs = sapply(env$dadaFs, getN)
+     env$count.dadaRs = sapply(env$dadaRs, getN)     
+
+     # Rename dada reads
+     names(env$count.dadaFs) = sub(x = basename(path = names(env$count.dadaFs)), pattern = fileTailPatternForward, replace = "") 
+     names(env$count.dadaRs) = sub(x = basename(path = names(env$count.dadaRs)), pattern = fileTailPatternReverse, replace = "")
+
+     # Count merged
+     my.cat("Counting the number of mergers...")
+     env$count.merged = sapply(env$mergers, getN)
+     names(env$count.merged) = sub(x = basename(path = names(env$count.merged)), pattern = fileTailPatternForward, replace = "")
+
+     # Count Nonchim
+     my.cat("Counting the number of sequences after chimeras are removed...")
+     env$count.nonchim = rowSums(env$seqtab.nochim)
+     names(env$count.nonchim) = sub(x = basename(path = names(env$count.nonchim)), pattern = fileTailPatternForward, replace = "")
+
+     # Make track
+     env$track = data.frame(matrix(nrow = length(env$count.fnFs), ncol = 10, data = NA))
+     colnames(env$track) = c("rawF", "rawR", "filteredNF", "filteredNR", "cutThreshF", "cutThreshR", "denoisedF", "denoisedR", "merged", "nonchim")
+
+     rownames(env$track) = names(env$count.fnFs)
+     env$track[names(env$count.fnFs), "rawF"] = env$count.fnFs 
+     env$track[names(env$count.fnRs), "rawR"] = env$count.fnRs 
+     env$track[names(env$count.fnFs.filtN), "filteredNF"] = env$count.fnFs.filtN 
+     env$track[names(env$count.fnRs.filtN), "filteredNR"] = env$count.fnRs.filtN 
+     env$track[names(env$count.filtFs), "cutThreshF"] = env$count.filtFs 
+     env$track[names(env$count.filtRs), "cutThreshR"] = env$count.filtRs 
+     env$track[names(env$count.dadaFs), "denoisedF"] = env$count.dadaFs 
+     env$track[names(env$count.dadaRs), "denoisedR"] = env$count.dadaRs 
+     env$track[names(env$count.merged), "merged"] = env$count.merged 
+     env$track[names(env$count.nonchim), "nonchim"] = env$count.nonchim    
+
+     # Convert each of the tracks into percents
+     env$track[,"filteredNF"] = env$track[,"filteredNF"]/env$track[,"rawF"]
+     env$track[,"filteredNR"] = env$track[,"filteredNR"]/env$track[,"rawR"]
+     env$track[,"cutThreshF"] = env$track[,"cutThreshF"]/env$track[,"rawF"]
+     env$track[,"cutThreshR"] =	env$track[,"cutThreshR"]/env$track[,"rawR"]
+     env$track[,"denoisedF"] = env$track[,"denoisedF"]/env$track[,"rawF"]
+     env$track[,"denoisedR"] = env$track[,"denoisedR"]/env$track[,"rawR"]
+     env$track[,"merged"] = env$track[,"merged"]/env$track[,"rawF"]
+     env$track[,"nonchim"] = env$track[,"nonchim"]/env$track[,"rawF"]
+     env$track[,"rawF"] = env$track[,"rawF"]/env$track[,"rawF"]
+     env$track[,"rawR"] = env$track[,"rawR"]/env$track[,"rawR"]
+
+     ## F. Visualize read input / output
+     env$track.m = melt(as.matrix(env$track))
+     colnames(env$track.m) = c("sample", "dataClass", "reads")
+     env$track.m$dataClass = factor(env$track.m$dataClass, levels = c("rawF", "rawR", "filteredNF", "filteredNR",
+     			   "cutThreshF", "cutThreshR", "denoisedF", "denoisedR", "merged", "nonchim"))
+     
+     p = ggplot(data = env$track.m, aes(x = dataClass, y = sample, fill = reads)) + 
+       	  geom_tile(aes(fill = reads)) +
+     	  scale_fill_gradient(low = "white", high = "steelblue") +
+  	  xlab("Pipeline Phase") + 
+	  ylab("Sample") + 
+	  theme(axis.text.x=element_text(angle=90,hjust=1)) +
+  	  guides(fill=guide_legend(title="%ReadsRetained"))
+     ggsave(p, file = file.path(env$output, "heatMapReads.pdf"))
+ 
+    
+     # Return env
+     return(env)
+     
+}
+
+# FUNCTION: assignTaxonomy
+# INPUT: 
+#     env: an environment from dada2.removeChimeras
+# OUTUT:
+#     taxa: the assigned taxonomy table
+dada2.assignTaxonomy = function(env, cores){
+      
+     # Assign taxonomy table
+     my.cat("Assigning taxonomy table...")
+     env$taxa = assignTaxonomy(env$seqtab.nochim, env$silvaTax, multithread = cores)
+
+     # Assign species table
+     my.cat("Assigning species table...")
+     env$taxa = addSpecies(env$taxa, env$silvaSpecies)
+
+     # Print out tax table
+     my.cat("Taxa assigned! ...")
+     taxa.print = env$taxa
+     rownames(taxa.print) = NULL
+     print(head(taxa.print))
+     
+     # Return environment
+     return(env)
+}
+
+# FUNCTION: dada2.makePhyloseq
+# INPUT:
+#    env: an environment variable from dada2.assignTaxonomy
+# OUTPUT:
+#    phylo: a phyloseq object with taxa table, metadata, and asvs
+dada2.makePhyloseq = function(env){
+     
+
+     my.cat("Removing the following rows of the metadata table which no longer have samples:")
+     print(rownames(env$metadata)[which(!rownames(env$metadata) %in% rownames(env$asv))])
+     
+     my.cat("Creating phyloseq object...")
+     env$dada2Metadata = env$metadata[rownames(env$asv),]
+     
+     # Make components of the phyloseq object
+     ASV = otu_table(as.matrix(env$asv), taxa_are_rows = FALSE)
+     TAX = tax_table(as.matrix(env$taxa))
+     META = sample_data(env$dada2Metadata)
+     
+     # Make the phyloseq object
+     env$phyloseq = phyloseq(ASV, TAX, META)  
+
+     # Print phyloseq object
+     print(env$phyloseq)
+     
+     # Return env
+     return(env)
+}
+
+# FUNCTION: dada2.save
+# INPUT: 
+#   env: an env object from dada2.makePhyloseq
+# OUTPUT: 
+#   Saves image of run and saves phyloseq object as a .RDS object
+dada2.save = function(env){
+     
+     # Name
+     baseName = paste0(c(env$proj.name, "_", env$process.id), sep = "", collapse = "")
+
+     # Save Image
+     fileImageName = file.path(env$output, paste0(baseName, "_dada2Run.RData"))
+     my.cat(paste0("Saving image to... ", fileImageName))
+     save.image(file = fileImageName, compress = TRUE) 
+     
+     # Save phyloseq
+     phyloseqImageName = file.path(env$output, paste0(baseName, "_phyloseq.rds"))
+     my.cat(paste0("Saving phyloseq object to... ", phyloseqImageName))
+     saveRDS(file = phyloseqImageName, env$phyloseq)
+
+     # Save ASV Table
+     asvImageName = file.path(env$output, paste0(baseName, "asv.rds"))
+     my.cat(paste0("Saving ASV table to ... ", asvImageName))
+     saveRDS(file = asvImageName, env$asv)
+
+     # Save TAX Table
+     taxImageName = file.path(env$output, paste0(baseName, "tax.rds"))
+     my.cat(paste0("Saving TAX table to ... ", taxImageName))
+     saveRDS(file = taxImageName, env$tax)
+
+}
+
+# FUNCTION: dada2.begin
+# PURPOSE: Run dada2 up to producting quality plots
+# INPUTS:
+#    cores: number of cores to run dada2
+#    cutAdapt: number of cores to run cutAdapt
+#    pool: should sequences be pooled for dada2
+#    thresh: the number of reads for which to throw out a sample 
+#    params: the user defined params
+#    metadataPath: the path to the metadatafile
+#    fastq.path: the path to the fastq files
+#    error: the amount of mismatches allowed for cut adapt. Default 0.1
+# OUTPUTS: Runs the dada2 script for the following functions
+#    dada2.envPrep()
+#    dada2.userDefinedParms(params, env)
+#    dada2.preFilter(env)
+#    dada2.checkMetadataMatchFasQ(metadataFile, fastq.path, env)
+#    dada2.preFilter(env, cores)
+#    dada2.checkForPrimersInitial(env)
+#    dada2.cut(env, cores, error)
+#    dada2.checkForPrimersPostCut(env)
+#    dada2.printCutQualityPlots(env, thresh)
+#    dada2.printFiltNQualityPlots(env, thresh)
+dada2.begin = function(cores, coresAdapt, params, metadataPath, fastq.path, thresh = 1000, error = 0.1){
+     
+
+     # Prep details about the environment
+     master = dada2.envPrep()
+
+     # Set some user defined parameters
+     master = dada2.userDefinedParams(file = params, env = master)
+
+     # Check that the fastq filenames and the metadata files match
+     master = dada2.checkMetadataMatchFastQ(metadataFile = metadataPath, fastq.path = fastq.path, env = master)
+
+     # Prefilter the reads - remove Ns
+     master = dada2.preFilter(env = master, cores = cores)
+
+     # Check for primers up front
+     dada2.checkForPrimersInitial(env = master)
+
+     # Cut off primers
+     master = dada2.cut(env = master, cores = coresAdapt, error = 0)
+
+     # Check for primers after cut
+     dada2.checkForPrimersPostCut(env = master) 
+
+     # Print out the cut sequence quality plots
+     dada2.printCutQualityPlots(env = master, thresh = thresh)
+
+     # Print out the filtered quality plots
+     master = dada2.printFiltNQualityPlots(env = master, thresh = thresh)
+     
+     # Return environment
+     return(master)
+}
+
+# FUNCTION: dada2.finish
+# PURPOSE: Run dada2 algorithm from quality plots to end
+# INPUTS: 
+#    env: an env from dada2.start
+#    pool: should dada2 sequences be pooled?
+#    thresh: the threshold to remove samples if below that threshold
+#    fwdTrimLength: Forward read trim length
+#    revTrimLength: The reverse read trim length
+#    cores: The numbers of cores to run dada2
+# OUTPUTS:
+#    dada2.filterCutSeqs: Filter the cut sequences
+#    dada2.learnErrors: Learn errors from sequences
+#    dada2.mergers: merge forward and reverse reads
+#    dada2.sequenceTable: make sequence table from mergers
+#    dada2.removeChimeras: Remove chimeras from sequence table
+#    dada2.makeASVTable: ASV table from removeChiemras
+#    dada2.makeCountTable: makes a figure of percent reads lost at each step
+#    dada2.assignTaxonomy: assign taxonomy tables
+#    dada2.makePhyloseq: make phyloseq environment
+#    dada2.saveImages: save key parts of the dada2 algorithm
+dada2.finish = function(env, pool = F, thresh = 1000, fwdTrimLength, revTrimLength, cores){
+     
+     # Filter cut sequences
+     master = dada2.filterCutSeqs(env = env, fwdTrimLength = fwdTrimLength, revTrimLength = revTrimLength, cores = cores, thresh = thresh)
+
+     # Learn errors
+     master = dada2.learnErrors(env = master, cores = cores, thresh = thresh) 
+    
+     # Run dada2
+     master = dada2.dada2(env = master, pool = pool, cores = cores) 
+
+     # Merge forward and reverse reads
+     master = dada2.mergers(env = master)
+
+     # Make sequence table
+     master = dada2.sequenceTable(env = master)
+     
+     # Remove Chimeras
+     master = dada2.removeChimeras(env = master, cores = cores)
+
+     # Make ASV Table
+     master = dada2.makeASVTable(env = master)
+
+     # Make track table
+     master = dada2.makeCountTable(env = master)
+     
+     # Assign Taxonomy
+     master = dada2.assignTaxonomy(env = master, cores = cores)
+
+     # Make Phyloseq object
+     master = dada2.makePhyloseq(env = master)
+
+     # Save
+     dada2.save(env = master)
+
+     # Return
+     return(master)
+}
+
