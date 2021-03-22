@@ -38,11 +38,11 @@ while(<ACC>){
 	
 	if($cmd =~ m/TRUE/){
 	    $paired = 1;
-	    print "The data are paired\n";
+	    print "The data are paired. Downloading in paired end mode now...\n";
 
 	}elsif($cmd =~ m/FALSE/){
 	    $paired = 0;
-	    print "The data are NOT paired\n";
+	    print "The data are NOT paired. Downloading in single end mode now...\n";
 	}else{
 	    die( "\n ERROR: Cannot determine if reads are paired or not\n");
 	}
