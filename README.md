@@ -8,3 +8,4 @@ Dada2 Quality Plots
 Requirements:
 Fastq file names must match rownames in metadata table.
 
+Files
