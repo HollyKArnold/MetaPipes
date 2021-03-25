@@ -1,7 +1,10 @@
-# MetaPipes
-Pipes raw 16S data through dada2, and uses EPA for sequence placement. 
+MetaPipes
+PURPOSE: Pipes raw 16S data through dada2, and uses EPA for sequence placement. 
 
-Output files:
+INPUTS:
+1. 
+
+OUTPUTS:
 Collectors curves
 Dada2 Quality Plots
 

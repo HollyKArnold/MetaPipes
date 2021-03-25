@@ -5,3 +5,7 @@ cutadapt	/home/micro/arnoldho/.conda/envs/dada2/bin/cutadapt	Path to cut adapt
 python3	/local/cluster/bin/python3	Path to python3
 figaro	/local/cluster/figaro/figaro.py	Path to figaro
 silvaFasta	/nfs3/Sharpton_Lab/prod/projects/arnoldhk/silva/version1/silvaReferenceFiles/silvaTree.fasta	Path to silva fasta file version 132
+silvaAlign	/nfs3/Sharpton_Lab/prod/projects/arnoldhk/silva/version1/silvaReferenceFiles/silvaTree.aln	Path to silva alignment file
+silvaTree	/nfs3/Sharpton_Lab/prod/projects/arnoldhk/silva/version1/silvaReferenceFiles/silvaTree.tre	Path to silva tree
+silvaInfo	/nfs3/Sharpton_Lab/prod/projects/arnoldhk/silva/version1/silvaReferenceFiles/silvaInfo.txt	Path to silva info
+silvaAlignOneLine	/nfs3/Sharpton_Lab/prod/projects/arnoldhk/silva/version1/silvaReferenceFiles/silvaTreeOneLine.aln	Path to silva alignment file one line per alignment sequence
