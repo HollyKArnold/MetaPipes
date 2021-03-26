@@ -184,12 +184,16 @@ dada2.userDefinedParams = function(file, env){
         my.cat(paste0("Setting silva alignment one line file to: ", env$silvaAlnOneLine))
 
         # Set the silva Info file
-        env$silvaInfo = as.vector(opts[which(opts[,1] == "info"), 2])
+        env$silvaInfo = as.vector(opts[which(opts[,1] == "silvaInfo"), 2])
         my.cat(paste0("Setting the silva info file to: ", env$silvaInfo))
 
         # Set the silva tree file
         env$silvaTree = as.vector(opts[which(opts[,1] == "silvaTree"), 2])
         my.cat(paste0("Setting the silva tree file to: ", env$silvaTree))
+
+        # Set the perl remove dots path to stitch mother alignment output with EPA
+        env$path.perlRemoveDots = as.vector(opts[which(opts[,1] == "perlRemoveDots"), 2])
+        my.cat(paste0("Setting the perl removeDots.pl path to: ", env$path.perlRemoveDots))
     
         # Ask what primer you want to use. 	
   	message = "Choose option for what primer to remove: \n1. EMP 16S sequencing protocol 515F(Parada)-806R(Apprill) \n2. EMP 16S original 515F(Caporaso)-806RCaporaso)\n3. Enter your own custom primer sequences.\n4. Don't remove primer sequences.\n\n"	
@@ -224,8 +228,6 @@ dada2.userDefinedParams = function(file, env){
 # OUTPUT: Prints to screen until recieves valid option and then returns appropriate primer
 readintegerPrimer <- function(max, min, message)
 {
-
-
 
   # Get user input
   n <- readline(prompt=message)
@@ -1841,9 +1843,11 @@ metapipes.humanReadable = function(env){
     env$phyloseqHR = metapipes.renameASVs(physeq = env$phyloseq)
     env$sequenceKey = data.frame("seqID" = env$phyloseqHR$sequenceKey.seqID, "ASV" = env$phyloseqHR$sequenceKey.ASV)
     env$psHR = phyloseq(otu_table(env$phyloseqHR$phyloseq), tax_table(env$phyloseqHR$phyloseq), sample_data(env$metadata))
-    env$path.sequenceKeyfasta = file = file.path(env$output, "seqKeyHR.fasta")
+    
+
     # Write out the fastq file
     metapipes.writeFasta(key = env$sequenceKey, file = file.path(env$output, "seqKeyHR.fasta"))
+    env$path.sequenceKeyfasta = file.path(env$output, "seqKeyHR.fasta")
 
     # Get the human readible QIIME tax table format
     env$taxHRQiimeFormat = metapipes.getTaxString(taxTable = tax_table(env$phyloseqHR$phyloseq))
@@ -2042,8 +2046,22 @@ metapipes.getTaxString = function(taxTable){
 #   returns an env which has paths to produced alignment files. 
 metapipes.mothurAlign = function(env){
 
-    cmd = paste(c("mothur \"#align.seqs(candidate=", env), collapse = "", sep = "")
-    system2()
+    cmd = paste(c("mothur \"#align.seqs(candidate=", env$path.sequenceKeyfasta, ", reference=", env$silvaAln, ", flip = F)\""), collapse = "", sep = "")
+    print(cmd)
+
+    nameFlipAccnos = gsub(x = env$path.sequenceKeyfasta, pattern = ".fasta", replace = "flip.accnos")
+    print("flip accnos name")
+    print(nameFlipAccnos)
+
+    # There were sequences that need to be removed
+    if(file.exists(nameFlipAccnos)){
+        env$path.flipAccnos = nameFlipAccnos
+        cmd = paste(c("mothur \"#remove.seqs(accnos=", nameFlipAccnos, "fasta=", nameAlign, ")\""), sep = "", collapse = "")
+        print(cmd)
+        cmd = paste(c("perl"), sep = "", collapse = "")
+    }else{
+        stop("metapipes.mothurAlign: there were no sequences to be removed. add this function.")
+    }
     
 }
 

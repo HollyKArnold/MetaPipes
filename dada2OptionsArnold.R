@@ -9,3 +9,4 @@ silvaAlign	/nfs3/Sharpton_Lab/prod/projects/arnoldhk/silva/version1/silvaReferen
 silvaTree	/nfs3/Sharpton_Lab/prod/projects/arnoldhk/silva/version1/silvaReferenceFiles/silvaTree.tre	Path to silva tree
 silvaInfo	/nfs3/Sharpton_Lab/prod/projects/arnoldhk/silva/version1/silvaReferenceFiles/silvaInfo.txt	Path to silva info
 silvaAlignOneLine	/nfs3/Sharpton_Lab/prod/projects/arnoldhk/silva/version1/silvaReferenceFiles/silvaTreeOneLine.aln	Path to silva alignment file one line per alignment sequence
+perlRemoveDots	/nfs3/Sharpton_Lab/prod/projects/arnoldhk/2021MetaAnalysisIBD/version1/scripts/MetaPipes	Removes dots to prep for EPA run after mothur alignment
