@@ -1,0 +1,112 @@
+
+#!/usr/bin/perl
+# renameFiles.pl
+# PURPOSE: To rename files that have been downloaded in fastq-dump
+#          format for dada2 pipeline.
+# INPUTS: 
+#  -i: inDir - an input directory containing files with which to rename.
+#  -p: 1 for paired, 0 for single reads.
+# OUTPUTS:
+#  1. Will ask if the file renaming scheme is appropriate (sent to STDOUT)
+#  2. If no, will stop. If yes, will rename files
+
+use warnings;
+use strict;
+use Getopt::Long;
+
+my $inDir; # Directory containing files to rename (raw fastq files)
+my $paired; # Do files contain paired data or not
+my $name; # study name
+my $forwardFileTail = "_1.fastq"; # forward file tail pattern of old file name
+my $reverseFileTail = "_2.fastq"; # reverse file tail pattern of new file name
+my $forwardReplace = ".R1.fastq"; # new file tail pattern forward
+my $reverseReplace = ".R2.fastq"; # new file tail pattern reverse 
+
+GetOptions(
+
+    "i:s" => \$inDir,
+    "p:i" => \$paired,
+    "n:s" => \$name,
+    "f:s" => \$forwardFileTail,
+    "r:s" => \$reverseFileTail,
+    "g:s" => \$forwardReplace,
+    "s:s" => \$reverseReplace,
+
+);
+
+opendir(DH, $inDir) or die ("renameFiles.pl: Can't open input directory at ${inDir}. Please check the -i option\n");
+my @files = readdir(DH);
+closedir(DH);
+
+my @cmds;
+
+foreach my $file (@files){
+
+    # For paired reads 
+    if($paired == 1){
+
+	my $newName = getNewFileHandlePaired($name, $file, $forwardFileTail, $reverseFileTail, $forwardReplace, $reverseReplace);
+	my $cmd = "mv ${inDir}${file} ${inDir}${newName}";
+
+	if ($newName eq ""){}
+	else{
+	    push @cmds, $cmd;
+    
+	}
+    }
+    # For non paired end reads
+    elsif($paired == 0){
+	
+	print "Branch still under development for non-paired files\n";
+    
+    }
+    
+    # Paired value is something not allowed.
+    else{
+
+	print "renameFiles.pl: Sorry, that is not a valid option. Please check the -p option and input 1 for paired files and 0 for single files\n";
+
+    }
+
+}
+
+printArray(@cmds);
+
+sub getNewFileHandlePaired{
+
+    my ($na, $fi, $of, $or, $nf, $nr) = @_;
+    my $newFileHandle;
+
+    if($n =~ m/${of}/){
+
+	$newFileHandle =~ s/${of}/${nf}/;
+
+    }elsif($n =~ m/${r}/){
+	
+	$newFileHandle =~ s/${or}/${nr}/;
+
+    }else{
+
+	$newFileHandle = "";
+
+    }
+
+    return($newFileHandle);
+
+}
+
+sub getUserInput{
+    my ($m) = @_;
+    print $m;
+    return 3;
+
+}
+
+sub printArray{
+    my (@array) = @_;
+    foreach my $e (@array){
+	print $e, "\n";
+    }
+}
+
+

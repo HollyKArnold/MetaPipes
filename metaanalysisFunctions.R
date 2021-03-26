@@ -175,7 +175,27 @@ dada2.userDefinedParams = function(file, env){
 	env$cutAdapt = as.vector(opts[which(opts[,1] == "cutadapt"), 2])
 	my.cat(paste0("Setting cut adapt file path to: ", env$cutAdapt))
 
-	# Ask what primer you want to use. 	
+        # set silva alignment file
+        env$silvaAln = as.vector(opts[which(opts[,1] == "silvaAlign"), 2])
+        my.cat(paste0("Setting silva alignment file to: ", env$silvaAln))
+
+        # set silva one line alignment file
+        env$silvaAlnOneLine = as.vector(opts[which(opts[,1] == "silvaAlignOneLine"), 2])
+        my.cat(paste0("Setting silva alignment one line file to: ", env$silvaAlnOneLine))
+
+        # Set the silva Info file
+        env$silvaInfo = as.vector(opts[which(opts[,1] == "silvaInfo"), 2])
+        my.cat(paste0("Setting the silva info file to: ", env$silvaInfo))
+
+        # Set the silva tree file
+        env$silvaTree = as.vector(opts[which(opts[,1] == "silvaTree"), 2])
+        my.cat(paste0("Setting the silva tree file to: ", env$silvaTree))
+
+        # Set the perl remove dots path to stitch mother alignment output with EPA
+        env$path.perlRemoveDots = as.vector(opts[which(opts[,1] == "perlRemoveDots"), 2])
+        my.cat(paste0("Setting the perl removeDots.pl path to: ", env$path.perlRemoveDots))
+    
+        # Ask what primer you want to use. 	
   	message = "Choose option for what primer to remove: \n1. EMP 16S sequencing protocol 515F(Parada)-806R(Apprill) \n2. EMP 16S original 515F(Caporaso)-806RCaporaso)\n3. Enter your own custom primer sequences.\n4. Don't remove primer sequences.\n\n"	
 
 	primers = readintegerPrimer(max = 4, min = 1, message = message)
@@ -208,8 +228,6 @@ dada2.userDefinedParams = function(file, env){
 # OUTPUT: Prints to screen until recieves valid option and then returns appropriate primer
 readintegerPrimer <- function(max, min, message)
 {
-
-
 
   # Get user input
   n <- readline(prompt=message)
@@ -383,8 +401,9 @@ dada2.checkMetadataMatchFastQ = function(fastq.path, metadataFile, env){
 	  names = basename(list.files(fastq.path))
 	}
 
-	metadata = read.table(metadataFile)
-	print(head(metadata))
+	#metadata = read.table(metadataFile, sep = "\t", header = T)
+        metadata = read.csv(metadataFile, sep = "\t")
+        print(head(metadata))
 	proceed = readline(prompt = "Above is the head of the metadatafile in the provided file, do you want to proceed? [y/n]: ")
 	
         while (!(proceed %in% c("y", "n"))) {
@@ -1499,6 +1518,9 @@ if(merge){
      # Save
      dada2.save(env = master)
 
+     # Get stats
+     dada2.getStats(env = master)
+
      # Return
      return(master)
      }else{ # Run dada2 on forward seqs only
@@ -1532,7 +1554,9 @@ if(merge){
 
      # Save
      dada2.save(env = master)
-     
+
+     # Get Stats
+     dada2.getStats(env = master)
 }
 }
 
@@ -1802,6 +1826,243 @@ dada2.printRunVars = function(env){
      print(dLatex, file = file.path(env$output, paste0(env$proj.name, "runSessionStatsLatex.txt")))
      
      return(d)
+}
+
+# FUNCTION: metapipes.humanReadable
+# INPUTS:
+#   env: an environment passed from dada2.getStats, dada2.finish, dada2.begin
+# OUTPUTS:
+#   asvHR.rds # asv table which is in human readable format
+#   taxHR.rds # tax table which is in human readable dada2 format
+#   taxOTUHR.rds # tax table which is in human readable QIIME format
+#   seqKeyHR.rds # sequence key which is in human readable format
+#   asvs.fastq $ fastq file containing all asvs.
+metapipes.humanReadable = function(env){
+
+    # Rename ASV and Tax table
+    env$phyloseqHR = metapipes.renameASVs(physeq = env$phyloseq)
+    env$sequenceKey = data.frame("seqID" = env$phyloseqHR$sequenceKey.seqID, "ASV" = env$phyloseqHR$sequenceKey.ASV)
+    env$psHR = phyloseq(otu_table(env$phyloseqHR$phyloseq), tax_table(env$phyloseqHR$phyloseq), sample_data(env$metadata))
+    
+
+    # Write out the fastq file
+    metapipes.writeFasta(key = env$sequenceKey, file = file.path(env$output, "seqKeyHR.fasta"))
+    env$path.sequenceKeyfasta = file.path(env$output, "seqKeyHR.fasta")
+
+    # Get the human readible QIIME tax table format
+    env$taxHRQiimeFormat = metapipes.getTaxString(taxTable = tax_table(env$phyloseqHR$phyloseq))
+
+    # Base name for files
+    baseName = paste0(c(env$proj.name, "_", env$process.id), sep = "", collapse = "")
+
+    #Save phyloseq human readable
+    phyloseqImageName = file.path(env$output, paste0(baseName, "_phyloseqHumanReadable.rds"))
+    my.cat(paste0("Saving human readable phyloseq object to...", phyloseqImageName ))
+    saveRDS(file = phyloseqImageName, env$psHR)
+
+    # Save ASV table
+    asvImageName = file.path(env$output, paste0(baseName, "asvHumanReadable.rds"))
+    my.cat(paste0("Saving human readable ASV table to ... ", asvImageName))
+    saveRDS(file = asvImageName, otu_table(env$phyloseqHR$phyloseq))
+
+    # Save TAX table dada2 format
+    taxImageName = file.path(env$output, paste0(baseName, "taxHumanReadable.rds"))
+    my.cat(paste0("Saving tax table to ...", taxImageName))
+    saveRDS(file = taxImageName, tax_table(env$phyloseqHR$phyloseq))
+
+    # Save TAX table in QIIME format
+    taxQIIMEImageName = file.path(env$output, paste0(baseName, "taxQIIMEHumanReadable.rds"))
+    my.cat(paste0("Saving QIIME formatted tax table to ...", taxQIIMEImageName))
+    saveRDS(file = taxQIIMEImageName, env$taxHRQiimeFormat)
+
+    # Save sequence key
+    sequenceKeyName = file.path(env$output, paste0(baseName, "sequenceKeyHumanReadable.rds"))
+    my.cat(paste0("Saving sequence key object to...", sequenceKeyName))
+    saveRDS(file = sequenceKeyName, env$sequenceKey)
+    
+    return(env)
+}
+
+
+
+# FUNCTION: metapipes.renameASVs
+# INPUT:
+#   physeq: a phyloseq object with tax and ASV table minimum
+# OUTPUT:
+#   returns a list with renamed phyloseq object and the sequence key
+#      sequenceKey.seqID
+#      sequenceKey.ASV
+#      phyloseq
+metapipes.renameASVs = function(physeq){
+
+         N = nrow(tax_table(physeq))
+
+         # Make Sequence Key
+         sequenceKey = as.data.frame(matrix(nrow = N, ncol = 2))
+         colnames(sequenceKey) = c("seqID", "ASV")
+         rownames(sequenceKey) = rownames(tax_table(physeq))
+         sequenceKey$seqID = paste0("seq", seq(from = 1, to = N, by = 1))
+         sequenceKey$ASV = rownames(sequenceKey)
+
+         # Get ASV table where taxa are rows
+         asv = meta.getOTUTable(physeq)
+         tax = tax_table(physeq)
+
+         # For every row
+         for(i in 1:N){
+
+                # Get the current ASV to rename
+                curASV = rownames(sequenceKey)[i]
+
+                # Rename the ASV rows
+                curASVIdx = which(rownames(asv) == curASV)
+                rownames(asv)[curASVIdx] = as.vector(sequenceKey[curASV, 1])
+
+                # Rename the tax rows
+                curTaxIdx = which(rownames(tax) == curASV)
+                rownames(tax)[curTaxIdx] = as.vector(sequenceKey[curASV, 1])
+
+                  }
+
+         # Rename rownmaes of sequenceKey to match tax table and asv Table
+         rownames(sequenceKey) = sequenceKey$seqID
+             
+         # Return relabeled phyloseq object
+         ps = phyloseq(OTU = otu_table(asv, taxa_are_rows = T), TAX = tax_table(tax))
+
+    
+         return(list = c("phyloseq" = ps, "sequenceKey" = as.data.frame(sequenceKey)))
+
+}
+
+## FUNCTION: metapipes.writeFasta
+## PURPOSE: To convert a sequence table to a fastQ format
+## INPUTS:
+##   key: a sequence key file with the following requirements
+##     Col 1: seqID the sequence ID (short version)
+##     Col 2: sequence - The sequence itself (dada2 output)
+##   file: the file name that you want to write the fastQ to
+## OUTPUTS:
+##   fastQ file written within your current working directory with the name provided to file
+metapipes.writeFasta = function(key, file){
+
+    # Create a sink to filename
+    sink(file)
+
+    # For each sequence, write a fastq entry
+    for(i in 1:nrow(key)){
+        cur = paste0(c(">", as.vector(key[i,"seqID"]), "\n", as.character(key[i,"ASV"]), "\n"), sep= "", collapse = "")
+        cat(cur)
+    }
+
+    #Close connection
+    closeAllConnections()
+}
+
+##FUNCTION: metapipes.getTaxString
+## PURPOSE: To convert a dada2 formatted taxonomic table to a qiime formated
+##          taxonomic table
+## INPUTS   taxTable:
+##          columnNames must be titled Kindom, Phylum, Class, Order, Family, Genus
+##          rows correspond to each sequence.
+##          An entry taxTable[i,j] corresponds to the jth taxonomic classifier
+##          of sequence i.
+## OUTPUT   taxReturn
+##          A matrix with two colums
+##          column1: the sequence ID from the rows in TaxTable
+##          column2: the collapsed taxString in QIIME format
+##          if the taxonomic entry in taxTable is NA, then the output string will
+##          contain "Unclassified".
+metapipes.getTaxString = function(taxTable){
+
+    taxReturn = as.data.frame(matrix(nrow = nrow(taxTable), ncol= 2))
+    for (i in 1:nrow(taxTable)){
+        string = ""
+
+        #Get Kingdom
+        if(!is.na(taxTable[i, "Kingdom"])){
+            string = paste(c(string, "k__", toString(taxTable[i, "Kingdom"])), collapse = "")
+        }else{
+            #string = paste(c(string, " Unassigned;"), collapse = "")
+        }
+
+        #Get Phylum
+        if(!is.na(taxTable[i, "Phylum"])){
+            string = paste(c(string, "; p__", toString(taxTable[i, "Phylum"])), collapse = "")
+        }else{
+                                        #string = paste(c(string, " Unassigned;"), collapse = "")
+        }
+
+        #Get Class
+        if(!is.na(taxTable[i, "Class"])){
+            string = paste(c(string, "; c__", toString(taxTable[i, "Class"])), collapse = "")
+        }else{
+                                          #string = paste(c(string, " Unassigned;"), collapse = "")
+        }
+
+        #Get Order
+        if(!is.na(taxTable[i, "Order"])){
+            string = paste(c(string, "; o__", toString(taxTable[i, "Order"])), collapse = "")
+        }else{
+                                        #string = paste(c(string, " Unassigned;"), collapse = "")
+        }
+ 
+        #Get Family
+        if(!is.na(taxTable[i, "Family"])){
+            string = paste(c(string, "; f__", toString(taxTable[i, "Family"])), collapse = "")
+        }else{
+                                        #string = paste(c(string, " Unassigned;"), collapse = "")
+        }
+
+        #Get Genus
+        if(!is.na(taxTable[i, "Genus"])){
+            string = paste(c(string, "; g__", toString(taxTable[i, "Genus"])), collapse = "")
+        }else{
+                                        #string = paste(c(string, " Unassigned;"), collapse = "")
+        }
+
+        if(!is.na(taxTable[i, "Kingdom"])){
+            if(taxTable[i, "Kingdom"] == "No blast hit"){
+                print("Unassigned")
+                string = "Unassigned"
+                taxReturn[i,1] = rownames(taxTable)[i]
+                taxReturn[i,2] = string
+ 
+            }
+        }
+        taxReturn[i,1] = rownames(taxTable)[i]
+        taxReturn[i,2] = string
+    }
+
+    # Return tax table
+    colnames(taxReturn) = c("sequence", "tax")
+    return(taxReturn)
+}
+
+# FUNCTION: metapipes.mothurAlign
+# INPUTS
+#   env from metapipes.humanReadable
+# OUTPUTS
+#   returns an env which has paths to produced alignment files. 
+metapipes.mothurAlign = function(env){
+
+    cmd = paste(c("mothur \"#align.seqs(candidate=", env$path.sequenceKeyfasta, ", reference=", env$silvaAln, ", flip = F)\""), collapse = "", sep = "")
+    print(cmd)
+
+    nameFlipAccnos = gsub(x = env$path.sequenceKeyfasta, pattern = ".fasta", replace = "flip.accnos")
+    print("flip accnos name")
+    print(nameFlipAccnos)
+
+    # There were sequences that need to be removed
+    if(file.exists(nameFlipAccnos)){
+        env$path.flipAccnos = nameFlipAccnos
+        cmd = paste(c("mothur \"#remove.seqs(accnos=", nameFlipAccnos, "fasta=", nameAlign, ")\""), sep = "", collapse = "")
+        print(cmd)
+        cmd = paste(c("perl"), sep = "", collapse = "")
+    }else{
+        stop("metapipes.mothurAlign: there were no sequences to be removed. add this function.")
+    }
+    
 }
 
 #FUNCTION clipASVSeqsTable
@@ -2119,7 +2380,7 @@ meta.rarefyEvenDepth = function(physeq, sample.size = min(sample_sums(physeq)), 
 #   name: the name of the sequence key table
 # OUTPUT:
 #   physeq: with ASVs relabeled for ease of use seq1, ..., seqN
-#   writes out a sequenceKey.txt table which contains ASV sequence and sequence key
+#   name: name to write out sequence key
 meta.renameASVs = function(physeq, name){
      
      N = nrow(tax_table(physeq))
@@ -2154,15 +2415,14 @@ meta.renameASVs = function(physeq, name){
      # Rename rownmaes of sequenceKey to match tax table and asv Table
      rownames(sequenceKey) = sequenceKey$seqID
 
+
      # Write out sequence Key
      write.table(file = paste0(name, "sequenceKey.txt"), quote = F, sep = "\t", x = sequenceKey)
-     
+         
      # Return relabeled phyloseq object
      ps = phyloseq(OTU = otu_table(asv, taxa_are_rows = T), TAX = tax_table(tax))
      return(ps)
      
-     
-
 }
 
 ## FUNCTION: writeFastQ

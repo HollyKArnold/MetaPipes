@@ -1,0 +1,4 @@
+#!/usr/bin/perl
+# getAccessions.pl
+# PURPOSE: Get a list of file accessions using fastq-dump
+
